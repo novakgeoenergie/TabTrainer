@@ -1,0 +1,56 @@
+name: Build TabTrainer APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Najdi projekt (zip nebo rozbalené soubory)
+        run: |
+          if [ -f pubspec.yaml ]; then
+            APP_DIR="$PWD"
+          else
+            mkdir -p /tmp/proj
+            for z in *.zip; do unzip -q -o "$z" -d /tmp/proj; done
+            APP_DIR="$(dirname "$(find /tmp/proj -name pubspec.yaml | head -n1)")"
+          fi
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+          echo "Projekt: $APP_DIR"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build
+        run: |
+          cd "$APP_DIR"
+          if [ ! -d android ]; then
+            flutter create --platforms=android --project-name tab_trainer --org cz.hobby /tmp/scaffold
+            cp -r /tmp/scaffold/android ./android
+          fi
+          sed -i 's/android:label="[^"]*"/android:label="Tab Trainer"/' android/app/src/main/AndroidManifest.xml
+          flutter pub get
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/TabTrainer.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TabTrainer-apk
+          path: TabTrainer.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: TabTrainer build ${{ github.run_number }}
+          files: TabTrainer.apk
